@@ -9,6 +9,7 @@
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-remote-config-compat.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Roboto:wght@400;700&display=swap" rel="stylesheet">
@@ -179,6 +180,7 @@
         const app = firebase.initializeApp(firebaseConfig);
         const db = app.firestore();
         const auth = app.auth();
+        const remoteConfig = app.remoteConfig();
 
         const AppState = {
             isAuthReady: false,
@@ -440,21 +442,45 @@
         }
 
         function handleClearRequest() {
-            hideModalError();
-            AppState.isPasswordPromptVisible = true;
-            updateModalDisplay();
-        }
+    // Verifica se o admin está logado usando o localStorage
+    if (localStorage.getItem('isAdminLoggedIn') !== 'true') {
+        showModalError("Ação restrita. Apenas administradores podem liberar números.");
+        return;
+    }
+
+    hideModalError();
+    AppState.isPasswordPromptVisible = true;
+    updateModalDisplay();
+}
 
         async function handleClearConfirm() {
-            if (!AppState.selectedNumber) return;
-            const password = Elements.adminPassword.value;
-            if (password !== "Embrasada2025") {
-                return showModalError("Senha incorreta.");
-            }
-            const updatedNumbers = AppState.numbers.map(n => n.id === AppState.selectedNumber.id ? { ...n, status: "available", owner: "", phone: "" } : n);
-            if (await updateFirestore(updatedNumbers)) hideModal();
-            else showModalError("Ocorreu um erro ao limpar o número.");
+    if (!AppState.selectedNumber) return;
+
+    const passwordInput = Elements.adminPassword.value;
+
+    try {
+        // Ativa e busca a configuração mais recente do Remote Config
+        await remoteConfig.fetchAndActivate();
+        const adminPassword = remoteConfig.getString('admin_password');
+
+        if (passwordInput !== adminPassword) {
+            return showModalError("Senha incorreta.");
         }
+
+        const updatedNumbers = AppState.numbers.map(n => 
+            n.id === AppState.selectedNumber.id ? { ...n, status: "available", owner: "", phone: "" } : n
+        );
+
+        if (await updateFirestore(updatedNumbers)) {
+            hideModal();
+        } else {
+            showModalError("Ocorreu um erro ao limpar o número.");
+        }
+    } catch (err) {
+        console.error("Erro ao buscar senha do Remote Config:", err);
+        showModalError("Não foi possível validar a senha. Tente novamente.");
+    }
+}
 
         // ... (O resto do código para a API Gemini e event listeners permanece o mesmo)
         
